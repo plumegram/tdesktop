@@ -118,6 +118,35 @@ dia_util.cc(31,10): error C1083: Cannot open include file: 'atlbase.h'
 Если `.sym` когда-нибудь понадобятся — проще всего подложить junction
 `VC\atlmfc` → `VC\Tools\MSVC\<ver>\atlmfc` и вернуть эти строки.
 
+### Грабли: Qt собирается только в Release, и его инсталл нельзя чистить
+
+`prepare` собирает Qt в `Libraries\win64\qt_6.11.2` (нижний регистр, с
+подчёркиванием), а ставит в `Libraries\win64\Qt-6.11.2`. В форке стейдж
+`qt_6.11.2` переведён на `-release` вместо `-debug-and-release`: приложение всё
+равно собирается только в Release (`-D CMAKE_CONFIGURATION_TYPES=Release`), а
+вторая конфигурация Qt — это лишние ~40 минут и несколько гигабайт в кэше.
+
+Второе, и важное: **из `Qt-6.11.2` нельзя удалять ничего**. `Qt6*Targets.cmake`
+ссылается на каждый установленный `.obj` по пути, и `configure` падает ещё до
+компиляции:
+
+```
+CMake Error at .../Qt6Gui/Qt6GuiTargets.cmake:144 (message):
+  The imported target "Qt6::Gui_resources_1" references the file
+  ".../lib/objects-Debug/Gui_resources_1/.qt/rcc/qrc_qpdf_init.cpp.obj"
+  but this file does not exist.
+```
+
+На этом легко поймать себя, если добавить в CI шаг «почистить `*.obj` перед
+сохранением кэша» — именно так и вышло. Сейчас шаг удаляет только
+`Libraries\win64\qt_*` (сборочное дерево) и `*.pdb`/`*.ilk`, а инсталл Qt не
+трогает.
+
+Если Qt всё же почистили — удалить `Libraries\win64\cache_keys\qt_6.11.2`:
+prepare сам снесёт и `qt_6.11.2`, и `Qt-6.11.2` (у каждого стейджа перед запуском
+выполняется `removeDir(stage_name)`, а в начале win-блока — `removeDir(Qt-...)`),
+и пересоберёт стейдж с нуля.
+
 ## Сменить IP / порт / ключ
 
 Всё в одном месте — `Telegram/SourceFiles/mtproto/mtproto_dc_options.cpp`:

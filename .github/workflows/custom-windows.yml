@@ -102,17 +102,21 @@ jobs:
       # the job fails. 'always()' also keeps a half-finished tree, and
       # prepare.py resumes from it (its own cache_keys mark finished stages).
       #
-      # Only build intermediates are dropped. Binaries, headers, .lib files and
-      # cmake packages must survive: the app links against them and the next run
-      # uses the cached tree as-is (a Qt without its plugins would "build" and
-      # then fail to start). Never widen this to a generic "delete everything".
+      # Careful: only the Qt *build* tree (Libraries/win64/qt_6.x, lowercase) is
+      # expendable. The install prefix (Libraries/win64/Qt-6.x) must stay
+      # byte-for-byte complete -- Qt6*Targets.cmake references every installed
+      # *.obj by path and configure dies if one is gone:
+      #   The imported target "Qt6::Gui_resources_1" references the file
+      #   ".../objects-Debug/Gui_resources_1/.qt/rcc/qrc_qpdf_init.cpp.obj"
+      #   but this file does not exist.
+      # .pdb/.ilk are never referenced by those cmake files, so they are safe.
       - name: Free up some disk space.
         if: always()
         continue-on-error: true
         shell: bash
         run: |
-          find Libraries -type d \( -name CMakeFiles -o -name '*.dir' -o -name obj \) -prune -exec rm -rf {} + 2>/dev/null || true
-          find Libraries -type f \( -name '*.obj' -o -name '*.pdb' -o -name '*.ilk' -o -name '*.iobj' \) -delete 2>/dev/null || true
+          rm -rf Libraries/win64/qt_* 2>/dev/null || true
+          find Libraries -type f \( -name '*.pdb' -o -name '*.ilk' \) -delete 2>/dev/null || true
 
       - name: Save Libraries cache.
         if: always()
