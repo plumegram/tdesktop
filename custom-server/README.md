@@ -78,6 +78,25 @@ Release-набор ~70 мин), плюс ~40 мин на само приложе
 сохраняется сразу после сборки библиотек, чтобы падение на линковке не
 обнуляло прогресс.
 
+### Грабли: ATL для breakpad
+
+`prepare` собирает `breakpad` (он нужен только macOS), и его тул `dump_syms`
+тянет ATL-заголовки. В образе `windows-latest` компонента ATL для VS 18 нет:
+
+```
+pdb_source_line_writer.h(36,10): error C1083: Cannot open include file: 'atlcomcli.h'
+dia_util.cc(31,10): error C1083: Cannot open include file: 'atlbase.h'
+```
+
+Workflow ставит компонент на раннере перед сборкой библиотек:
+
+```
+vs_installer.exe modify --installPath "<VS>" --add Microsoft.VisualStudio.Component.VC.ATL --quiet --norestart
+```
+
+и проверяет, что `VC\atlmfc\include\atlbase.h` появился. Локально на машине с VS
+этот компонент обычно уже стоит (ставится галочкой «C++ ATL» в установщике).
+
 ## Сменить IP / порт / ключ
 
 Всё в одном месте — `Telegram/SourceFiles/mtproto/mtproto_dc_options.cpp`:

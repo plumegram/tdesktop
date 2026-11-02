@@ -60,21 +60,56 @@ jobs:
           nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
           nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
 
+      # breakpad's dump_syms tool includes <atlbase.h> / <atlcomcli.h>, but the
+      # windows-latest image does not ship the ATL component for VS 18.
+      # Without it prepare dies with:
+      #   error C1083: Cannot open include file: 'atlbase.h'
+      - name: Install ATL component.
+        run: |
+          set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+          set "VSPATH="
+          for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
+          if not defined VSPATH exit /b 1
+          echo VS instance: %VSPATH%
+          if exist "%VSPATH%\VC\atlmfc\include\atlbase.h" (
+            echo ATL already installed, nothing to do.
+            exit /b 0
+          )
+          "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vs_installer.exe" modify ^
+            --installPath "%VSPATH%" ^
+            --add Microsoft.VisualStudio.Component.VC.ATL ^
+            --quiet --norestart --nocache
+          if errorlevel 3010 goto atl_check
+          if errorlevel 1 exit /b 1
+          :atl_check
+          for /l %%i in (1,1,40) do (
+            if exist "%VSPATH%\VC\atlmfc\include\atlbase.h" goto atl_ok
+            timeout /t 10 /nobreak >nul
+          )
+          echo ERROR: atlbase.h is still missing after installing the ATL component.
+          exit /b 1
+          :atl_ok
+          echo ATL headers are in place.
+
       - name: ThirdParty cache.
         id: cache-third-party
         uses: actions/cache@v4
         with:
           path: ThirdParty
-          key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}
+          key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}-${{ github.run_id }}
           restore-keys: ${{ runner.OS }}-${{ runner.arch }}-third-party-
 
+      # Unique key per run + prefix restore: every attempt saves whatever it
+      # managed to build, and the next run resumes from the newest tree.
       - name: Libraries cache.
         id: cache-libs
         uses: actions/cache@v4
         with:
           path: Libraries
-          key: ${{ runner.OS }}-${{ runner.arch }}-libs-rel-${{ env.CACHE_KEY }}
-          restore-keys: ${{ runner.OS }}-${{ runner.arch }}-libs-rel-
+          key: ${{ runner.OS }}-${{ runner.arch }}-libs-rel-${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.OS }}-${{ runner.arch }}-libs-rel-${{ env.CACHE_KEY }}-
+            ${{ runner.OS }}-${{ runner.arch }}-libs-rel-
 
       # No 'skip-release' here: the app is built in Release, so it needs the
       # Release flavour of openssl/tg_angle/ffmpeg/libavif/etc. Without it the
@@ -86,22 +121,28 @@ jobs:
 
       # Save the libraries immediately: a later build failure would otherwise
       # throw away hours of work, because cache post-steps are skipped when
-      # the job fails.
+      # the job fails. 'always()' also keeps a half-finished tree, and
+      # prepare.py resumes from it (its own cache_keys mark finished stages).
+      - name: Free up some disk space.
+        shell: bash
+        run: |
+          find Libraries '(' '(' ! '(' -name '*.lib' -o -name '*.a' -o -name '*.exe' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -name '*.pc' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' -o -path '*/nv-codec-headers/*' ')' -type f ')' -o -empty ')' -delete
+
       - name: Save Libraries cache.
-        if: success()
+        if: always()
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: Libraries
-          key: ${{ runner.OS }}-${{ runner.arch }}-libs-rel-${{ env.CACHE_KEY }}
+          key: ${{ runner.OS }}-${{ runner.arch }}-libs-rel-${{ env.CACHE_KEY }}-${{ github.run_id }}
 
       - name: Save ThirdParty cache.
-        if: success()
+        if: always()
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: ThirdParty
-          key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}
+          key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}-${{ github.run_id }}
 
       - name: Configure.
         run: |
