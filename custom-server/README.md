@@ -78,24 +78,45 @@ Release-набор ~70 мин), плюс ~40 мин на само приложе
 сохраняется сразу после сборки библиотек, чтобы падение на линковке не
 обнуляло прогресс.
 
-### Грабли: ATL для breakpad
+### Грабли: breakpad, ATL и VS 18
 
-`prepare` собирает `breakpad` (он нужен только macOS), и его тул `dump_syms`
-тянет ATL-заголовки. В образе `windows-latest` компонента ATL для VS 18 нет:
+В Release-части стейджа `breakpad` `prepare` собирает тул `dump_syms`, а он
+тянет ATL-заголовки. На `windows-latest` стоит **Visual Studio 18 Enterprise**
+(`C:\Program Files\Microsoft Visual Studio\18\Enterprise`), где ATL живёт в
+`VC\Tools\MSVC\14.44.35207\atlmfc`, а сгенерированный `dump_syms.vcxproj`
+жёстко прописывает старый путь:
+
+```
+/I"C:\Program Files\Microsoft Visual Studio\18\Enterprise\\VC\atlmfc\include"
+```
+
+Такого каталога нет — отсюда падение всего `prepare`:
 
 ```
 pdb_source_line_writer.h(36,10): error C1083: Cannot open include file: 'atlcomcli.h'
 dia_util.cc(31,10): error C1083: Cannot open include file: 'atlbase.h'
+[27/36](Libraries/breakpad): FAILED
 ```
 
-Workflow ставит компонент на раннере перед сборкой библиотек:
+Установка компонента `Microsoft.VisualStudio.Component.VC.ATL` через
+`vs_installer` **не помогает**: ATL встаёт в `VC\Tools\MSVC\<ver>\atlmfc`, а
+`vcxproj` смотрит в `VC\atlmfc` (и оттуда же ждёт `atls.lib` на линковке).
+
+Поэтому `dump_syms` в этой сборке просто не собирается: в форке из стейджа
+`breakpad` (`Telegram/build/prepare/prepare.py`) убраны три строки —
 
 ```
-vs_installer.exe modify --installPath "<VS>" --add Microsoft.VisualStudio.Component.VC.ATL --quiet --norestart
+    cd tools\windows\dump_syms
+    gyp dump_syms.gyp --format=msvs
+    msbuild -m dump_syms.vcxproj /property:Configuration=Release /property:Platform="x64"
 ```
 
-и проверяет, что `VC\atlmfc\include\atlbase.h` появился. Локально на машине с VS
-этот компонент обычно уже стоит (ставится галочкой «C++ ATL» в установщике).
+`dump_syms` нужен только для генерации `.sym`-файлов к крэш-репортам, а они
+здесь выключены (`-D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON`). Сам breakpad
+(`common`, `crash_generation_client`, `exception_handler`) собирается как обычно.
+
+Если `.sym` когда-нибудь понадобятся — проще всего подложить junction
+`VC\atlmfc` → `VC\Tools\MSVC\<ver>\atlmfc` и вернуть эти строки.
 
 ## Сменить IP / порт / ключ
 
