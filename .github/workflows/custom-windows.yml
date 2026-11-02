@@ -69,26 +69,47 @@ jobs:
           set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
           set "VSPATH="
           for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
-          if not defined VSPATH exit /b 1
-          echo VS instance: %VSPATH%
-          if exist "%VSPATH%\VC\atlmfc\include\atlbase.h" (
-            echo ATL already installed, nothing to do.
-            exit /b 0
+          if not defined VSPATH (
+            echo ERROR: no Visual Studio instance with C++ tools found.
+            exit /b 1
           )
+          echo VS instance: %VSPATH%
+
+          if exist "%VSPATH%\VC\atlmfc\include\atlbase.h" goto atl_found
+
+          echo Installing the ATL component...
           "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vs_installer.exe" modify ^
             --installPath "%VSPATH%" ^
             --add Microsoft.VisualStudio.Component.VC.ATL ^
             --quiet --norestart --nocache
-          if errorlevel 3010 goto atl_check
-          if errorlevel 1 exit /b 1
-          :atl_check
-          for /l %%i in (1,1,40) do (
-            if exist "%VSPATH%\VC\atlmfc\include\atlbase.h" goto atl_ok
-            timeout /t 10 /nobreak >nul
+          echo vs_installer exit code: %errorlevel%
+
+          set /a atl_tries=0
+          :atl_loop
+          if exist "%VSPATH%\VC\atlmfc\include\atlbase.h" goto atl_found
+          for /d %%d in ("%VSPATH%\VC\Tools\MSVC\*") do (
+            if exist "%%d\atlmfc\include\atlbase.h" goto atl_found_tools
           )
+          set /a atl_tries+=1
+          if %atl_tries% GEQ 40 goto atl_fail
+          rem 'timeout' is unusable here: stdin is redirected in CI.
+          ping -n 11 127.0.0.1 >nul
+          goto atl_loop
+
+          :atl_fail
           echo ERROR: atlbase.h is still missing after installing the ATL component.
+          echo Installed VC components:
+          dir /b "%VSPATH%\VC"
           exit /b 1
-          :atl_ok
+
+          :atl_found_tools
+          for /d %%d in ("%VSPATH%\VC\Tools\MSVC\*") do (
+            if exist "%%d\atlmfc\include\atlbase.h" echo ATL_INCLUDE=%%d\atlmfc\include>>%GITHUB_ENV%
+          )
+          echo ATL headers found under VC\Tools\MSVC.
+
+          :atl_found
+          if exist "%VSPATH%\VC\atlmfc\include\atlbase.h" echo ATL_INCLUDE=%VSPATH%\VC\atlmfc\include>>%GITHUB_ENV%
           echo ATL headers are in place.
 
       - name: ThirdParty cache.
@@ -117,6 +138,9 @@ jobs:
       # Cost: both flavours are built, roughly 2.5h on a cold cache.
       - name: Libraries.
         run: |
+          rem breakpad's dump_syms looks for atlbase.h through the project's
+          rem -I paths; expose the installed ATL folder through INCLUDE too.
+          if defined ATL_INCLUDE set "INCLUDE=%ATL_INCLUDE%;%INCLUDE%"
           %REPO_DIR%\Telegram\build\prepare\win.bat silent
 
       # Save the libraries immediately: a later build failure would otherwise
