@@ -1,0 +1,142 @@
+name: Custom server build.
+
+# Builds the patched Telegram Desktop (hardcoded MTProto server) as a Release
+# Windows x64 binary and uploads Telegram.exe as a downloadable artifact.
+#
+# Run it from the Actions tab ("Run workflow") or push to the custom-server
+# branch. No local Visual Studio installation is required.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - custom-server
+
+jobs:
+
+  windows:
+    name: Windows x64 Release
+    runs-on: windows-latest
+
+    env:
+      UPLOAD_ARTIFACT: "true"
+      PREPARE_PATH: "Telegram/build/prepare/prepare.py"
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Prepare directories.
+        run: |
+          mkdir %userprofile%\TBuild\Libraries
+          mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
+          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV
+
+      - name: Get repository name.
+        shell: bash
+        run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
+
+      - name: Clone.
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: ${{ env.TBUILD }}\${{ env.REPO_NAME }}
+
+      - name: First set up.
+        shell: bash
+        run: |
+          DOCPATH=$TBUILD/$REPO_NAME/docs/building-win.md
+          SDK="$(grep "SDK version" $DOCPATH | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
+          echo "SDK=$SDK" >> $GITHUB_ENV
+
+          echo "$(sha256sum $TBUILD/$REPO_NAME/$PREPARE_PATH | awk '{ print $1 }')" >> CACHE_KEY.txt
+          echo "$SDK" >> CACHE_KEY.txt
+          echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
+
+          echo "Configurate git for cherry-picks."
+          git config --global user.email "you@example.com"
+          git config --global user.name "Sample"
+
+      - uses: Eden-CI/msvc-dev-cmd@master
+        name: Native Tools Command Prompt.
+        with:
+          arch: x64
+          sdk: ${{ env.SDK }}
+          toolset: 14.44
+
+      - name: NuGet sources.
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
+
+      - name: ThirdParty cache.
+        id: cache-third-party
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-${{ runner.arch }}-third-party-
+
+      - name: Libraries cache.
+        id: cache-libs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ runner.OS }}-${{ runner.arch }}-libs-v2-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-${{ runner.arch }}-libs-v2-
+
+      - name: Qt cache.
+        id: cache-qt
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ runner.OS }}-${{ runner.arch }}-qt-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-${{ runner.arch }}-qt-
+
+      - name: Libraries.
+        run: |
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat skip-release silent
+
+      - name: Configure.
+        run: |
+          cd %TBUILD%\%REPO_NAME%\Telegram
+          call configure.bat x64 ^
+          -D TDESKTOP_API_ID=2040 ^
+          -D TDESKTOP_API_HASH=b18441a1ff607e10a989891a5462e627 ^
+          -D CMAKE_CONFIGURATION_TYPES=Release ^
+          -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
+          -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+
+      - name: Build.
+        run: |
+          cd %TBUILD%\%REPO_NAME%
+          cmake --build out --config Release --parallel
+
+      - name: Verify build output.
+        shell: bash
+        run: |
+          ls -la "$TBUILD/$REPO_NAME/out/Release" | head -40
+          test -f "$TBUILD/$REPO_NAME/out/Release/Telegram.exe"
+
+      - name: Move artifact.
+        if: env.UPLOAD_ARTIFACT == 'true'
+        run: |
+          mkdir artifact
+          move %TBUILD%\%REPO_NAME%\out\Release\Telegram.exe artifact\
+
+      - uses: actions/upload-artifact@v4
+        name: Upload artifact.
+        if: env.UPLOAD_ARTIFACT == 'true'
+        with:
+          name: PlumeGram-Desktop-win64
+          path: artifact\
+          retention-days: 30

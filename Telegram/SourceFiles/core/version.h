@@ -18,9 +18,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #endif // TDESKTOP_ALLOW_CLOSED_ALPHA
 
 // used in Updater.cpp and Setup.iss for Windows
-constexpr auto AppId = "{53F49750-6209-4FBF-9CA8-7A333C87D1ED}"_cs;
+// Custom server build: own GUID, so that this client has its own single
+// instance, its own taskbar group and does not clash with official Telegram.
+constexpr auto AppId = "{A7F3C2E1-9B4D-4E6A-8F1C-3D5B7A9E2C48}"_cs;
 constexpr auto AppNameOld = "Telegram Win (Unofficial)"_cs;
-constexpr auto AppName = "Telegram Desktop"_cs;
+// Custom server build: own data folder (%APPDATA%\PlumeGram Desktop), so the
+// custom client never touches the session of an installed official Telegram.
+constexpr auto AppName = "PlumeGram Desktop"_cs;
 constexpr auto AppFile = "Telegram"_cs;
 constexpr auto AppVersion = 7003004;
 constexpr auto AppVersionStr = "7.3.4";

@@ -28,53 +28,61 @@ struct BuiltInDc {
 	int port;
 };
 
-const BuiltInDc kBuiltInDcs[] = {
-	{ 1, "149.154.175.50" , 443 },
-	{ 2, "149.154.167.51" , 443 },
-	{ 2, "95.161.76.100"  , 443 },
-	{ 3, "149.154.175.100", 443 },
-	{ 4, "149.154.167.91" , 443 },
-	{ 5, "149.154.171.5"  , 443 },
-};
+// ---------------------------------------------------------------------------
+// CUSTOM SERVER BUILD (PlumeGram / Airgram MTProto server).
+//
+// Every DC id is mapped to the same single custom server, so that whichever
+// DC id the server reports back through help.getConfig the client still talks
+// to the same host. Change kCustomServerIp / kCustomServerPort if the server
+// moves. IPv6 endpoints are intentionally removed: the custom server has no
+// IPv6 listener and probing it only adds connect timeouts.
+// ---------------------------------------------------------------------------
+constexpr auto kCustomServerIp = "84.21.173.237";
+constexpr auto kCustomServerPort = 443;
 
-const BuiltInDc kBuiltInDcsIPv6[] = {
-	{ 1, "2001:0b28:f23d:f001:0000:0000:0000:000a", 443 },
-	{ 2, "2001:067c:04e8:f002:0000:0000:0000:000a", 443 },
-	{ 3, "2001:0b28:f23d:f003:0000:0000:0000:000a", 443 },
-	{ 4, "2001:067c:04e8:f004:0000:0000:0000:000a", 443 },
-	{ 5, "2001:0b28:f23f:f005:0000:0000:0000:000a", 443 },
+// When true the DC list received from the server (help.getConfig) is ignored
+// and the client always stays on kCustomServerIp. Enable this if the server
+// answers with Telegram's real DC addresses (some proxy-based forks do that)
+// and the client keeps "jumping" back to Telegram servers. Keep it false when
+// the server hands out its own media/upload DCs - those would be lost.
+constexpr bool kLockDcOptions = false;
+
+const BuiltInDc kBuiltInDcs[] = {
+	{ 1, kCustomServerIp, kCustomServerPort },
+	{ 2, kCustomServerIp, kCustomServerPort },
+	{ 3, kCustomServerIp, kCustomServerPort },
+	{ 4, kCustomServerIp, kCustomServerPort },
+	{ 5, kCustomServerIp, kCustomServerPort },
 };
 
 const BuiltInDc kBuiltInDcsTest[] = {
-	{ 1, "149.154.175.10" , 443 },
-	{ 2, "149.154.167.40" , 443 },
-	{ 3, "149.154.175.117", 443 }
+	{ 1, kCustomServerIp, kCustomServerPort },
+	{ 2, kCustomServerIp, kCustomServerPort },
+	{ 3, kCustomServerIp, kCustomServerPort },
 };
 
-const BuiltInDc kBuiltInDcsIPv6Test[] = {
-	{ 1, "2001:0b28:f23d:f001:0000:0000:0000:000e", 443 },
-	{ 2, "2001:067c:04e8:f002:0000:0000:0000:000e", 443 },
-	{ 3, "2001:0b28:f23d:f003:0000:0000:0000:000e", 443 }
-};
-
+// Public RSA key of the custom server (E:\keys\server_rsa_public_pkcs1.pem).
+// Fingerprint as computed by Telegram Desktop: 0x1a47636d1496dcc5.
+// Re-run tools/key_fingerprint.py after any key rotation on the server and
+// update both blocks below, otherwise the resPQ handshake is rejected.
 const char *kTestPublicRSAKeys[] = { "\
 -----BEGIN RSA PUBLIC KEY-----\n\
-MIIBCgKCAQEAyMEdY1aR+sCR3ZSJrtztKTKqigvO/vBfqACJLZtS7QMgCGXJ6XIR\n\
-yy7mx66W0/sOFa7/1mAZtEoIokDP3ShoqF4fVNb6XeqgQfaUHd8wJpDWHcR2OFwv\n\
-plUUI1PLTktZ9uW2WE23b+ixNwJjJGwBDJPQEQFBE+vfmH0JP503wr5INS1poWg/\n\
-j25sIWeYPHYeOrFp/eXaqhISP6G+q2IeTaWTXpwZj4LzXq5YOpk4bYEQ6mvRq7D1\n\
-aHWfYmlEGepfaYR8Q0YqvvhYtMte3ITnuSJs171+GDqpdKcSwHnd6FudwGO4pcCO\n\
-j4WcDuXc2CTHgH8gFTNhp/Y8/SpDOhvn9QIDAQAB\n\
+MIIBCgKCAQEAj1o2+arqVWG8XsWdHKior3E3hwpaLILT/lv9nK/EacT4+lfK0ymk\n\
+oPYkBCfWB1O7jhGD3zKUFhaTW8wZo+7HLDT6FO/PoGnkqWzO6buD3LE4kfbrQ0jp\n\
+ZL4Mpvd+G/u+0x4NML4p/anIWfqN24Vh5OcRjoqF+ROhDyh9dHd+lHirNz+uf3Ze\n\
+1OLvAs332YErjn7of3xmwte145/MQ+OnlSvMaPhx/m3BPsPKXBP28gG/RydwNoaj\n\
+Wv+ee4dQzqhaFP9vEBVwqIMNy8mxViVkzQld/UokOaE+xVo+HNGOvqHosqw91X/b\n\
+gTckDQOnFEm2mJv0eWtQrvULXC4N+4CLJQIDAQAB\n\
 -----END RSA PUBLIC KEY-----" };
 
 const char *kPublicRSAKeys[] = { "\
 -----BEGIN RSA PUBLIC KEY-----\n\
-MIIBCgKCAQEA6LszBcC1LGzyr992NzE0ieY+BSaOW622Aa9Bd4ZHLl+TuFQ4lo4g\n\
-5nKaMBwK/BIb9xUfg0Q29/2mgIR6Zr9krM7HjuIcCzFvDtr+L0GQjae9H0pRB2OO\n\
-62cECs5HKhT5DZ98K33vmWiLowc621dQuwKWSQKjWf50XYFw42h21P2KXUGyp2y/\n\
-+aEyZ+uVgLLQbRA1dEjSDZ2iGRy12Mk5gpYc397aYp438fsJoHIgJ2lgMv5h7WY9\n\
-t6N/byY9Nw9p21Og3AoXSL2q/2IJ1WRUhebgAdGVMlV1fkuOQoEzR7EdpqtQD9Cs\n\
-5+bfo3Nhmcyvk5ftB0WkJ9z6bNZ7yxrP8wIDAQAB\n\
+MIIBCgKCAQEAj1o2+arqVWG8XsWdHKior3E3hwpaLILT/lv9nK/EacT4+lfK0ymk\n\
+oPYkBCfWB1O7jhGD3zKUFhaTW8wZo+7HLDT6FO/PoGnkqWzO6buD3LE4kfbrQ0jp\n\
+ZL4Mpvd+G/u+0x4NML4p/anIWfqN24Vh5OcRjoqF+ROhDyh9dHd+lHirNz+uf3Ze\n\
+1OLvAs332YErjn7of3xmwte145/MQ+OnlSvMaPhx/m3BPsPKXBP28gG/RydwNoaj\n\
+Wv+ee4dQzqhaFP9vEBVwqIMNy8mxViVkzQld/UokOaE+xVo+HNGOvqHosqw91X/b\n\
+gTckDQOnFEm2mJv0eWtQrvULXC4N+4CLJQIDAQAB\n\
 -----END RSA PUBLIC KEY-----" };
 
 } // namespace
@@ -181,24 +189,14 @@ void DcOptions::constructFromBuiltIn() {
 			).arg(entry.port));
 	}
 
-	const auto listv6 = isTestMode()
-		? gsl::make_span(kBuiltInDcsIPv6Test)
-		: gsl::make_span(kBuiltInDcsIPv6).subspan(0);
-	for (const auto &entry : listv6) {
-		const auto flags = Flag::f_static | Flag::f_ipv6;
-		applyOneGuarded(entry.id, flags, entry.ip, entry.port, {});
-		DEBUG_LOG(("MTP Info: adding built in DC %1 IPv6 connect option: "
-			"%2:%3"
-			).arg(entry.id
-			).arg(entry.ip
-			).arg(entry.port));
-	}
+	// Custom server build: IPv6 endpoints removed, the server has no IPv6
+	// listener and probing it only delays the first connect.
 }
 
 void DcOptions::processFromList(
 		const QVector<MTPDcOption> &options,
 		bool overwrite) {
-	if (options.empty() || _immutable) {
+	if (options.empty() || _immutable || kLockDcOptions) {
 		return;
 	}
 
