@@ -59,6 +59,25 @@ powershell -ExecutionPolicy Bypass -File custom-server\build-local.ps1
 Скрипт сам подтянет Qt официальным `prepare/win.bat`, сконфигурирует Release
 и соберёт `out\Release\Telegram.exe`.
 
+### Грабли: `skip-release` и конфигурация
+
+Официальный CI телеграмовцев собирает **Debug** и поэтому вызывает
+`prepare\win.bat skip-release silent` — флаг выкидывает все Release-команды из
+скриптов сборки библиотек. Если потом собрать приложение в Release, линковка
+падает:
+
+```
+LNK1181: cannot open input file '...\Libraries\win64\openssl3\out\libssl.lib'
+LNK1181: cannot open input file '...\Libraries\win64\tg_angle\out\Release\tg_angle.lib'
+LNK2038: mismatch detected for 'RuntimeLibrary': 'MT_StaticRelease' doesn't match 'MTd_StaticDebug'
+```
+
+Поэтому в `custom-windows.yml` `skip-release` **не передаётся**: собираются оба
+набора библиотек. Холодный прогон занимает ~2.5 часа (Debug-набор ~90 мин +
+Release-набор ~70 мин), плюс ~40 мин на само приложение. Кэш `Libraries`
+сохраняется сразу после сборки библиотек, чтобы падение на линковке не
+обнуляло прогресс.
+
 ## Сменить IP / порт / ключ
 
 Всё в одном месте — `Telegram/SourceFiles/mtproto/mtproto_dc_options.cpp`:

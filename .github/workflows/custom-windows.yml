@@ -73,12 +73,35 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Libraries
-          key: ${{ runner.OS }}-${{ runner.arch }}-libs-${{ env.CACHE_KEY }}
-          restore-keys: ${{ runner.OS }}-${{ runner.arch }}-libs-
+          key: ${{ runner.OS }}-${{ runner.arch }}-libs-rel-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-${{ runner.arch }}-libs-rel-
 
+      # No 'skip-release' here: the app is built in Release, so it needs the
+      # Release flavour of openssl/tg_angle/ffmpeg/libavif/etc. Without it the
+      # link step dies with LNK1181 (missing .lib) and LNK2038 (MT vs MTd).
+      # Cost: both flavours are built, roughly 2.5h on a cold cache.
       - name: Libraries.
         run: |
-          %REPO_DIR%\Telegram\build\prepare\win.bat skip-release silent
+          %REPO_DIR%\Telegram\build\prepare\win.bat silent
+
+      # Save the libraries immediately: a later build failure would otherwise
+      # throw away hours of work, because cache post-steps are skipped when
+      # the job fails.
+      - name: Save Libraries cache.
+        if: success()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: Libraries
+          key: ${{ runner.OS }}-${{ runner.arch }}-libs-rel-${{ env.CACHE_KEY }}
+
+      - name: Save ThirdParty cache.
+        if: success()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ThirdParty
+          key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}
 
       - name: Configure.
         run: |

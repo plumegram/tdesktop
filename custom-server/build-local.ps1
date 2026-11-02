@@ -56,9 +56,13 @@ $env:TBUILD = $BuildPath
 $env:LibrariesPath = $librariesPath
 
 # --- 3. Third party libraries (Qt, OpenSSL, ffmpeg, ...) ---------------------
+# NOTE: no 'skip-release' here. That flag drops every Release-scoped command
+# from the library build scripts, and a Release app build then fails to link
+# with LNK1181 (missing openssl3/out/libssl.lib, tg_angle, libavif) and
+# LNK2038 (MT vs MTd in Qt static plugins).
 if (-not $SkipPrepare) {
-    Write-Host "`n=== Preparing third party libraries (30-60 min, ~5 GB) ===" -ForegroundColor Cyan
-    cmd /c "call `"$vcvars`" -vcvars_ver=14.44 && `"$SourcePath\Telegram\build\prepare\win.bat`" skip-release silent"
+    Write-Host "`n=== Preparing third party libraries (60-150 min, ~10 GB) ===" -ForegroundColor Cyan
+    cmd /c "call `"$vcvars`" -vcvars_ver=14.44 && `"$SourcePath\Telegram\build\prepare\win.bat`" silent"
     if ($LASTEXITCODE -ne 0) { Fail "prepare step failed" }
 }
 
