@@ -38,7 +38,7 @@ struct BuiltInDc {
 // IPv6 listener and probing it only adds connect timeouts.
 // ---------------------------------------------------------------------------
 constexpr auto kCustomServerIp = "84.21.173.237";
-constexpr auto kCustomServerPort = 443;
+constexpr auto kCustomServerPort = 20443;
 
 // When true the DC list received from the server (help.getConfig) is ignored
 // and the client always stays on kCustomServerIp. Enable this if the server

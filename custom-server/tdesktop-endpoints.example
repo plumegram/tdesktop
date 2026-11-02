@@ -4,8 +4,8 @@
 # Anything after '#' is a comment. All DC ids are mapped to the same server,
 # because the custom server hosts every DC on one host.
 
-1 84.21.173.237 443
-2 84.21.173.237 443
-3 84.21.173.237 443
-4 84.21.173.237 443
-5 84.21.173.237 443
+1 84.21.173.237 20443
+2 84.21.173.237 20443
+3 84.21.173.237 20443
+4 84.21.173.237 20443
+5 84.21.173.237 20443
