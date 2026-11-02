@@ -1687,7 +1687,7 @@ depends:patches/qtbase_""" + qt + """/*.patch
 depends:patches/qtsvg_""" + qt + """/*.patch
 win32_win64:
 depends:qt6_windows7/*.patch
-version:""" + computeFileHash(qtAngleCmake) + """
+version:""" + computeFileHash(qtAngleCmake) + """-2
 mac:
     if [ -d "../patches/qt6_highsierra" ]; then
         find "$PWD/../patches/qt6_highsierra" -maxdepth 1 -name "*.patch" -print0 | sort -z | xargs -0 git -C qtbase apply -v
@@ -1761,7 +1761,7 @@ win:
     SET CONFIGURATIONS=-debug
     SET ASSERTS=
 release:
-    SET CONFIGURATIONS=-release
+    SET CONFIGURATIONS=-debug-and-release
 win_asserts:
     SET ASSERTS=-force-asserts
 win:
@@ -1824,8 +1824,10 @@ win:
         -D LCMS2_INCLUDE_DIR="%LCMS2_DIR%\\include" ^
         -D LCMS2_LIBRARIES="%LCMS2_DIR%\\out\\Release\\src\\liblcms2.a"
 
-    cmake --build . --config Release
-    cmake --install . --config Release
+    cmake --build . --config Debug
+    cmake --install . --config Debug
+    cmake --build .
+    cmake --install .
 """)
 
 stage('tg_owt', """
