@@ -134,6 +134,20 @@ jobs:
           path: ThirdParty
           key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}-${{ github.run_id }}
 
+      # Cheap, and it answers the only question that matters when the build
+      # dies with C1060/C3859/LNK1102: how much commit room was there.
+      - name: Report memory and free space.
+        shell: pwsh
+        run: |
+          Get-PSDrive C, D | ForEach-Object {
+            '{0}: {1} GB free' -f $_.Name, [math]::Round($_.Free / 1GB, 1)
+          }
+          Get-CimInstance Win32_PageFileUsage |
+            ForEach-Object { 'pagefile {0}: {1} MB allocated, {2} MB in use' -f $_.Name, $_.AllocatedBaseSize, $_.CurrentUsage }
+          $os = Get-CimInstance Win32_OperatingSystem
+          'physical: {0} MB total, {1} MB free' -f [math]::Round($os.TotalVisibleMemorySize / 1KB), [math]::Round($os.FreePhysicalMemory / 1KB)
+          'commit limit: {0} MB (of which {1} MB is paging files)' -f [math]::Round($os.TotalVirtualMemorySize / 1KB), [math]::Round($os.SizeStoredInPagingFiles / 1KB)
+
       - name: Configure.
         run: |
           cd %REPO_DIR%\Telegram
@@ -141,23 +155,37 @@ jobs:
           -D TDESKTOP_API_ID=2040 ^
           -D TDESKTOP_API_HASH=b18441a1ff607e10a989891a5462e627 ^
           -D CMAKE_CONFIGURATION_TYPES=Release ^
+          -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
           -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
           -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          rem Debug info is off on purpose: cl gets no /Zi and link gets no
+          rem /DEBUG, so no multi-gigabyte Telegram.pdb is generated. Crash
+          rem reports are disabled anyway, and building that PDB is what pushed
+          rem link.exe past the runner's commit limit (LNK1102).
+          findstr /C:"GenerateDebugInformation" %REPO_DIR%\out\Telegram\Telegram.vcxproj || echo GenerateDebugInformation is not set at all.
 
-      # '--parallel' without a number means one msbuild node per core. The
-      # Telegram project compiles ~1900 sources against a very large PCH, and
-      # four concurrent cl.exe processes holding it exhaust the runner's commit
-      # space roughly 90% into the build:
+      # The runner's paging file is small and fixed, so the whole job has a hard
+      # commit limit. When it is reached the compiler reports:
       #
-      #   memory(1749,1): error C1060: compiler is out of heap space
-      #   wallet_api.cpp(1,1): error C3859: Failed to create virtual memory for PCH
+      #   error C3859: Failed to create virtual memory for PCH
+      #   the system returned code 1455: The paging file is too small ...
+      #   error C1060: compiler is out of heap space
       #
-      # After that every remaining file in the project fails, so a 1h50m build
-      # dies at the last hurdle. Two nodes keep peak memory near 6 GB instead of
-      # ~12 GB. The cost is small: the work is mostly serial inside the single
-      # Telegram.vcxproj anyway, the parallel nodes only cover its dependencies.
+      # and the linker reports LNK1102. Two nodes is what fits: the Telegram
+      # project compiles ~1900 sources against a very large PCH and each cl.exe
+      # keeps a copy of it mapped, so four nodes (the default, one per core) blow
+      # the limit about 90% into the build. The work is mostly serial inside the
+      # single Telegram.vcxproj anyway, so the extra nodes only cover its
+      # dependencies and cost little.
+      #
+      # Temp files go to D: as well: C: holds the paging file, and anything
+      # written there makes it harder for Windows to grow it.
       - name: Build.
+        env:
+          TMP: D:\tmp
+          TEMP: D:\tmp
         run: |
+          if not exist D:\tmp mkdir D:\tmp
           cmake --build %REPO_DIR%\out --config Release --parallel 2
           if errorlevel 1 (
             echo.
