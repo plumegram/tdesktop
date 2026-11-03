@@ -140,13 +140,14 @@ jobs:
         shell: pwsh
         run: |
           Get-PSDrive C, D | ForEach-Object {
-            '{0}: {1} GB free' -f $_.Name, [math]::Round($_.Free / 1GB, 1)
+            '::notice title=Disk {0}::{1} GB free' -f $_.Name, [math]::Round($_.Free / 1GB, 1)
           }
-          Get-CimInstance Win32_PageFileUsage |
-            ForEach-Object { 'pagefile {0}: {1} MB allocated, {2} MB in use' -f $_.Name, $_.AllocatedBaseSize, $_.CurrentUsage }
+          Get-CimInstance Win32_PageFileUsage | ForEach-Object {
+            '::notice title=Pagefile::{0} {1} MB allocated, {2} MB in use' -f $_.Name, $_.AllocatedBaseSize, $_.CurrentUsage
+          }
           $os = Get-CimInstance Win32_OperatingSystem
-          'physical: {0} MB total, {1} MB free' -f [math]::Round($os.TotalVisibleMemorySize / 1KB), [math]::Round($os.FreePhysicalMemory / 1KB)
-          'commit limit: {0} MB (of which {1} MB is paging files)' -f [math]::Round($os.TotalVirtualMemorySize / 1KB), [math]::Round($os.SizeStoredInPagingFiles / 1KB)
+          '::notice title=Memory::physical {0} MB, free {1} MB' -f [math]::Round($os.TotalVisibleMemorySize / 1KB), [math]::Round($os.FreePhysicalMemory / 1KB)
+          '::notice title=Commit limit::{0} MB, of which {1} MB is paging files' -f [math]::Round($os.TotalVirtualMemorySize / 1KB), [math]::Round($os.SizeStoredInPagingFiles / 1KB)
 
       - name: Configure.
         run: |
@@ -162,7 +163,8 @@ jobs:
           rem /DEBUG, so no multi-gigabyte Telegram.pdb is generated. Crash
           rem reports are disabled anyway, and building that PDB is what pushed
           rem link.exe past the runner's commit limit (LNK1102).
-          findstr /C:"GenerateDebugInformation" %REPO_DIR%\out\Telegram\Telegram.vcxproj || echo GenerateDebugInformation is not set at all.
+          rem Reported as an annotation so it is visible without the log dump.
+          for /f "delims=" %%i in ('findstr /C:"GenerateDebugInformation" %REPO_DIR%\out\Telegram\Telegram.vcxproj') do echo ::notice title=DebugInfo::%%i
 
       # The runner's paging file is small and fixed, so the whole job has a hard
       # commit limit. When it is reached the compiler reports:
