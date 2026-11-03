@@ -144,9 +144,29 @@ jobs:
           -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
           -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
 
+      # '--parallel' without a number means one msbuild node per core. The
+      # Telegram project compiles ~1900 sources against a very large PCH, and
+      # four concurrent cl.exe processes holding it exhaust the runner's commit
+      # space roughly 90% into the build:
+      #
+      #   memory(1749,1): error C1060: compiler is out of heap space
+      #   wallet_api.cpp(1,1): error C3859: Failed to create virtual memory for PCH
+      #
+      # After that every remaining file in the project fails, so a 1h50m build
+      # dies at the last hurdle. Two nodes keep peak memory near 6 GB instead of
+      # ~12 GB. The cost is small: the work is mostly serial inside the single
+      # Telegram.vcxproj anyway, the parallel nodes only cover its dependencies.
       - name: Build.
         run: |
-          cmake --build %REPO_DIR%\out --config Release --parallel
+          cmake --build %REPO_DIR%\out --config Release --parallel 2
+          if errorlevel 1 (
+            echo.
+            echo First attempt failed. Retrying with a single node: objects that
+            echo were already built are reused, so only the files that died are
+            echo compiled again.
+            cmake --build %REPO_DIR%\out --config Release --parallel 1
+            if errorlevel 1 exit /b 1
+          )
 
       - name: Verify build output.
         shell: bash
