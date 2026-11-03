@@ -118,13 +118,25 @@ dia_util.cc(31,10): error C1083: Cannot open include file: 'atlbase.h'
 Если `.sym` когда-нибудь понадобятся — проще всего подложить junction
 `VC\atlmfc` → `VC\Tools\MSVC\<ver>\atlmfc` и вернуть эти строки.
 
-### Грабли: Qt собирается только в Release, и его инсталл нельзя чистить
+### Грабли: инсталл Qt нельзя чистить
 
 `prepare` собирает Qt в `Libraries\win64\qt_6.11.2` (нижний регистр, с
-подчёркиванием), а ставит в `Libraries\win64\Qt-6.11.2`. В форке стейдж
-`qt_6.11.2` переведён на `-release` вместо `-debug-and-release`: приложение всё
-равно собирается только в Release (`-D CMAKE_CONFIGURATION_TYPES=Release`), а
-вторая конфигурация Qt — это лишние ~40 минут и несколько гигабайт в кэше.
+подчёркиванием), а ставит в `Libraries\win64\Qt-6.11.2`.
+
+Пробовали перевести стейдж на `-release` вместо `-debug-and-release`, чтобы
+сэкономить ~40 минут и пару гигабайт кэша. Так нельзя: Qt, собранный без
+debug-конфигурации, экспортирует `rcc`/`moc`/`qsb` без адреса для Release, и
+`configure` падает ещё до компиляции:
+
+```
+CMake Error in CMakeLists.txt:
+  IMPORTED_LOCATION not set for imported target "Qt6::rcc" configuration "Release".
+CMake Error: AUTORCC for target external_microtex_bundled:
+  The "rcc" executable "Qt6::rcc-NOTFOUND" does not exist.
+```
+
+Поэтому стейдж оставлен как в апстриме: `-debug-and-release`, сборка и установка
+Debug, затем Release.
 
 Второе, и важное: **из `Qt-6.11.2` нельзя удалять ничего**. `Qt6*Targets.cmake`
 ссылается на каждый установленный `.obj` по пути, и `configure` падает ещё до
@@ -141,6 +153,40 @@ CMake Error at .../Qt6Gui/Qt6GuiTargets.cmake:144 (message):
 сохранением кэша» — именно так и вышло. Сейчас шаг удаляет только
 `Libraries\win64\qt_*` (сборочное дерево) и `*.pdb`/`*.ilk`, а инсталл Qt не
 трогает.
+
+### Грабли: файл подкачки раннера — это потолок всей сборки
+
+У `windows-latest` маленький файл подкачки фиксированного размера, поэтому у
+джоба есть жёсткий лимит зафиксированной памяти (commit limit). Когда он
+выбирается, компилятор и линковщик падают «на ровном месте», хотя RAM ещё есть:
+
+```
+error C3859: Failed to create virtual memory for PCH
+    the system returned code 1455: The paging file is too small for this operation to complete.
+error C1060: compiler is out of heap space
+LINK : fatal error LNK1102: out of memory
+```
+
+Симптом характерный: **сотни файлов падают в одну и ту же секунду**, и все
+файлы после них тоже. Это не ошибка в коде и не «мало оперативки под
+компилятор» — это лимит commit'а.
+
+Что сделано:
+
+- сборка идёт с `--parallel 2` (а не по умолчанию — по узлу на ядро): каждый
+  `cl.exe` держит в памяти копию огромного PCH проекта `Telegram`, четыре штуки
+  не влезают;
+- при падении автоматически повторяется с `--parallel 1` — объектники остаются
+  на месте, поэтому ретрай компилирует только упавшие файлы (~25 минут вместо
+  двух часов);
+- `CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=` — без `/Zi` и `/DEBUG`, то есть без
+  многогигабайтного `Telegram.pdb`. Именно его генерация добивала `link.exe`
+  (`LNK1102`), а краш-репорты здесь всё равно выключены;
+- `TMP`/`TEMP` перенесены на `D:` — на `C:` живёт файл подкачки, и мусор рядом
+  с ним мешает Windows его увеличивать.
+
+В лог печатается шаг «Report memory and free space» — размер pagefile, свободное
+место и commit limit, чтобы следующее падение сразу читалось с числами.
 
 Если Qt всё же почистили — удалить `Libraries\win64\cache_keys\qt_6.11.2`:
 prepare сам снесёт и `qt_6.11.2`, и `Qt-6.11.2` (у каждого стейджа перед запуском
