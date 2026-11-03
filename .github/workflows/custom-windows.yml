@@ -93,6 +93,21 @@ jobs:
       # so the dump_syms tool is not built at all (see the patch to
       # Telegram/build/prepare/prepare.py). It is only needed to produce .sym
       # files for crash reports, and those are disabled for this build.
+      # One-time repair for caches saved by older runs of this workflow: they
+      # contain the Qt cache_keys marker but not Libraries/win64/qt_6.11.2,
+      # because the cleanup step used to delete that directory. prepare.py reads
+      # the missing directory as "stage never built" and rebuilds Qt for
+      # ~67 minutes, so recreate it empty -- the install prefix it produced is
+      # still in the cache. No-op once the directory is there.
+      - name: Repair the Qt stage directory.
+        shell: bash
+        continue-on-error: true
+        run: |
+          if [ -f Libraries/win64/cache_keys/qt_6.11.2 ] && [ ! -d Libraries/win64/qt_6.11.2 ]; then
+            mkdir -p Libraries/win64/qt_6.11.2
+            echo "Recreated the empty Qt build directory so prepare skips the stage."
+          fi
+
       - name: Libraries.
         run: |
           %REPO_DIR%\Telegram\build\prepare\win.bat silent
@@ -110,12 +125,20 @@ jobs:
       #   ".../objects-Debug/Gui_resources_1/.qt/rcc/qrc_qpdf_init.cpp.obj"
       #   but this file does not exist.
       # .pdb/.ilk are never referenced by those cmake files, so they are safe.
+      #
+      # The Qt build directory itself must survive, only its contents go:
+      # prepare.py's checkCacheKey() treats the existence of
+      # Libraries/win64/<stage> as proof that the stage was built, so deleting
+      # qt_6.11.2 makes the next run rebuild Qt from scratch (~67 minutes).
       - name: Free up some disk space.
         if: always()
         continue-on-error: true
         shell: bash
         run: |
-          rm -rf Libraries/win64/qt_* 2>/dev/null || true
+          shopt -s nullglob dotglob
+          for d in Libraries/win64/qt_*/; do
+            rm -rf "${d}"* 2>/dev/null || true
+          done
           find Libraries -type f \( -name '*.pdb' -o -name '*.ilk' \) -delete 2>/dev/null || true
 
       - name: Save Libraries cache.
@@ -159,12 +182,14 @@ jobs:
           -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
           -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
           -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+          if errorlevel 1 exit /b 1
           rem Debug info is off on purpose: cl gets no /Zi and link gets no
           rem /DEBUG, so no multi-gigabyte Telegram.pdb is generated. Crash
           rem reports are disabled anyway, and building that PDB is what pushed
           rem link.exe past the runner's commit limit (LNK1102).
           rem Reported as an annotation so it is visible without the log dump.
-          for /f "delims=" %%i in ('findstr /C:"GenerateDebugInformation" %REPO_DIR%\out\Telegram\Telegram.vcxproj') do echo ::notice title=DebugInfo::%%i
+          for /f "delims=" %%i in ('findstr /C:"GenerateDebugInformation" "%GITHUB_WORKSPACE%\%REPO_DIR%\out\Telegram\Telegram.vcxproj"') do echo ::notice title=DebugInfo::%%i
+          exit /b 0
 
       # The runner's paging file is small and fixed, so the whole job has a hard
       # commit limit. When it is reached the compiler reports:
